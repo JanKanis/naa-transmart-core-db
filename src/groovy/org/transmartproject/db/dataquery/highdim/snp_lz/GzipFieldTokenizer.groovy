@@ -31,6 +31,7 @@ import java.util.zip.GZIPInputStream;
  */
 @CompileStatic
 class GzipFieldTokenizer {
+    String version = 'Groovy version'
 
     private Blob blob
     private int expectedSize
