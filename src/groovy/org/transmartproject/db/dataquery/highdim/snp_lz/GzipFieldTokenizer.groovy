@@ -20,7 +20,8 @@
 package org.transmartproject.db.dataquery.highdim.snp_lz;
 
 import com.google.common.base.Charsets;
-import com.google.common.base.Function;
+import com.google.common.base.Function
+import com.google.common.collect.AbstractIterator
 import groovy.transform.CompileStatic;
 
 import java.sql.Blob;
@@ -31,10 +32,12 @@ import java.util.zip.GZIPInputStream;
  */
 @CompileStatic
 class GzipFieldTokenizer {
-    String version = 'Groovy version, space in outer'
+    String version = 'Groovy version, withReader'
 
     private Blob blob
     private int expectedSize
+
+    static final char space = ' ' as char
 
     public GzipFieldTokenizer(Blob blob, int expectedSize) {
         this.blob = blob
@@ -52,8 +55,69 @@ class GzipFieldTokenizer {
         }
     }
 
+    private <T> T withIterator(Function<Iterator<String>, T> action) {
+        BufferedReader reader = new BufferedReader(
+                new InputStreamReader(new GZIPInputStream(blob.getBinaryStream()), Charsets.US_ASCII));
+
+        try {
+            return action.apply((Iterator<String>) new AbstractIterator<String>() {
+
+                private StringBuilder builder = new StringBuilder();
+                private int size = 0;
+
+                private String value(boolean last) {
+                    size++
+                    if (size > expectedSize - (last ? 0 : 1)) {
+                        throw new InputMismatchException("Got more tokens than the $expectedSize expected")
+                    }
+                    if (last) {
+                        if (size != expectedSize) {
+                            throw new InputMismatchException("Expected $expectedSize tokens, but got only $size}")
+                        }
+                    }
+                    String ret = builder.toString()
+                    builder.setLength(0)
+                    // I am really missing an AbstractIterator.lastValue(T) here, so manage state manually
+                    if (last) builder = null
+                    return ret
+                }
+
+                @Override
+                String computeNext() {
+                    char c
+                    // The assignment expression takes the value of the right hand side
+                    while ((c = reader.read()) >= 0) {
+                        if (c == space) {
+                            return value(false)
+                        } else {
+                            builder.append(c)
+                        }
+                    }
+                    // If the reader was entirely empty, don't yield anything
+                    if (builder && (size || builder.size())) {
+                        return value(true)
+                    }
+                    return endOfData()
+                }
+            })
+        } finally {
+            reader.close()
+        }
+    }
+
     private <T> T withScanner(final Function<Scanner, T> action) {
         return withReader({ Reader r -> action.apply(new Scanner(r)) } as Function<Reader, T>)
+    }
+
+    public double[] asDoubleArray2() {
+        return withIterator( { Iterator<String> tokens -> //new () { double[] apply(Iterator<String> tokens) {
+            double[] res = new double[expectedSize]
+            int i = 0
+            while (tokens.hasNext()) {
+                res[i++] = Double.parseDouble(tokens.next())
+            }
+            return res;
+        } as Function<Iterator<String>, double[]>)
     }
 
     public double[] asDoubleArray() {
@@ -77,11 +141,24 @@ class GzipFieldTokenizer {
         } as Function<Scanner, double[]>)
     }
 
-    final char space = ' ' as char
     /**
      * @throws InputMismatchException iff the number of values read &ne; <var>expectedSize</var>.
      * @return a list of strings.
      */
+    public List<String> asStringList2() {
+        withIterator(new Function<Iterator<String>, List<String>>() { List<String> apply(Iterator<String> iter) {
+        //Iterator<String> iter ->
+            ArrayList<String> l = new ArrayList(expectedSize)
+            while (iter.hasNext()) {
+                String s = iter.next()
+                //println "got $s"
+                l.add(s)
+            }
+            return l
+        }})
+        //} as Function<Iterator, List>)
+    }
+
     public List<String> asStringList() {
         return withReader({ Reader r ->
             ArrayList<String> res = new ArrayList<String>(expectedSize)
