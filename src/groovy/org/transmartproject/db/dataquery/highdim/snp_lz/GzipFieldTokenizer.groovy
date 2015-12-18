@@ -31,7 +31,7 @@ import java.util.zip.GZIPInputStream;
  */
 @CompileStatic
 class GzipFieldTokenizer {
-    String version = 'Groovy version'
+    String version = 'Groovy version, space in outer'
 
     private Blob blob
     private int expectedSize
@@ -77,6 +77,7 @@ class GzipFieldTokenizer {
         } as Function<Scanner, double[]>)
     }
 
+    final char space = ' ' as char
     /**
      * @throws InputMismatchException iff the number of values read &ne; <var>expectedSize</var>.
      * @return a list of strings.
@@ -88,7 +89,7 @@ class GzipFieldTokenizer {
             char c
             // The assignment expression takes the value of the right hand side
             while ((c = r.read()) >= 0) {
-                if (c == ' ' as char) {
+                if (c == space) {
                     res.add(builder.toString())
                     builder.setLength(0)
                     if (res.size() > expectedSize - 1) {
