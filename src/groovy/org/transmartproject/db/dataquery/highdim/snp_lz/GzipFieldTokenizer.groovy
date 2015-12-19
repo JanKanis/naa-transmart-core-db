@@ -32,7 +32,7 @@ import java.util.zip.GZIPInputStream;
  */
 @CompileStatic
 class GzipFieldTokenizer {
-    String version = 'Groovy version, withReader'
+    String version = 'Groovy version, withTokens function'
 
     private Blob blob
     private int expectedSize
@@ -50,6 +50,41 @@ class GzipFieldTokenizer {
 
         try {
             return action.apply(reader)
+        } finally {
+            reader.close()
+        }
+    }
+
+    private void withTokens(Function<String, Object> closure) {
+        BufferedReader reader = new BufferedReader(
+                new InputStreamReader(new GZIPInputStream(blob.getBinaryStream()), Charsets.US_ASCII));
+
+        try {
+            StringBuilder builder = new StringBuilder();
+            int size = 0
+            char c
+            // The assignment expression takes the value of the right hand side
+            while ((c = reader.read()) >= 0) {
+                if (c == space) {
+                    size++
+                    if (size > expectedSize - 1) {
+                        throw new InputMismatchException("Got more tokens than the $expectedSize expected")
+                    }
+                    closure.apply(builder.toString())
+                    builder.setLength(0)
+                } else {
+                    builder.append(c)
+                }
+            }
+
+            size += (size > 0 || builder.size() ? 1 : 0)
+            // check first to make sure we don't call closure too many times
+            if (size != expectedSize) {
+                throw new InputMismatchException("Expected $expectedSize tokens, but got only $size")
+            }
+            if (size) {
+                closure.apply(builder.toString())
+            }
         } finally {
             reader.close()
         }
@@ -109,18 +144,32 @@ class GzipFieldTokenizer {
         return withReader({ Reader r -> action.apply(new Scanner(r)) } as Function<Reader, T>)
     }
 
+    public double[] asDoubleArray() {
+        double[] res = new double[expectedSize]
+        int i = 0
+        withTokens(new Function<String,Object>(){Object apply(String tok) {
+            setDoubleAt(res, i++, Double.parseDouble(tok))
+        }})
+        return res
+    }
+
+    // Doing this inline in a closure confuses the groovy compiler
+    static private void setDoubleAt(double[] arr, int index, double d) {
+        arr[index] = d
+    }
+
     public double[] asDoubleArray2() {
-        return withIterator( { Iterator<String> tokens -> //new () { double[] apply(Iterator<String> tokens) {
+        return withIterator(new Function<Iterator<String>, double[]>() { double[] apply(Iterator<String> tokens) {
             double[] res = new double[expectedSize]
             int i = 0
             while (tokens.hasNext()) {
                 res[i++] = Double.parseDouble(tokens.next())
             }
             return res;
-        } as Function<Iterator<String>, double[]>)
+        }})
     }
 
-    public double[] asDoubleArray() {
+    public double[] asDoubleArray1() {
         return withScanner({ Scanner scan ->
             double[] res = new double[expectedSize]
             int i = 0
@@ -141,6 +190,14 @@ class GzipFieldTokenizer {
         } as Function<Scanner, double[]>)
     }
 
+    public List<String> asStringList() {
+        ArrayList<String> res = new ArrayList(expectedSize)
+        withTokens(new Function<String,Object>(){ Object apply(String tok) {
+            res.add(tok)
+        }})
+        return res
+    }
+
     /**
      * @throws InputMismatchException iff the number of values read &ne; <var>expectedSize</var>.
      * @return a list of strings.
@@ -150,16 +207,14 @@ class GzipFieldTokenizer {
         //Iterator<String> iter ->
             ArrayList<String> l = new ArrayList(expectedSize)
             while (iter.hasNext()) {
-                String s = iter.next()
-                //println "got $s"
-                l.add(s)
+                l.add(iter.next())
             }
             return l
         }})
-        //} as Function<Iterator, List>)
+        //})
     }
 
-    public List<String> asStringList() {
+    public List<String> asStringList1() {
         return withReader({ Reader r ->
             ArrayList<String> res = new ArrayList<String>(expectedSize)
             StringBuilder builder = new StringBuilder();
